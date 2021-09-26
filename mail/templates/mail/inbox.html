@@ -1,0 +1,250 @@
+{% extends "mail/layout.html" %}
+{% load static %}
+
+{% block body %}
+    <h2>{{ request.user.email }}</h2>
+
+    <button class="btn btn-sm btn-outline-primary" id="inbox">Inbox</button>
+    <button class="btn btn-sm btn-outline-primary" id="compose">Compose</button>
+    <button class="btn btn-sm btn-outline-primary" id="sent">Sent</button>
+    <button class="btn btn-sm btn-outline-primary" id="archived">Archived</button>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'logout' %}">Log Out</a>
+    <hr>
+
+    <div id="emails-view">
+    </div>
+
+    <div id="compose-view">
+        <h3>New Email</h3>
+        <form id="compose-form">
+            <div class="form-group">
+                From: <input disabled class="form-control" value="{{ request.user.email }}">
+            </div>
+            <div class="form-group">
+                <div id="toerror"></div>
+                To: <input id="compose-recipients" class="form-control">
+            </div>
+            <div class="form-group">
+                <div id="suberror"></div>
+                <input class="form-control" id="compose-subject" placeholder="Subject">
+            </div>
+            <textarea class="form-control" id="compose-body" placeholder="Body"></textarea>
+            <input type="submit" class="btn btn-primary"/>
+        </form>
+    </div>
+{% endblock %}
+
+{% block script %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+        // Use buttons to toggle between views
+        document.querySelector('#inbox').addEventListener('click', () => load_mailbox('inbox'));
+        document.querySelector('#sent').addEventListener('click', () => load_mailbox('sent'));
+        document.querySelector('#archived').addEventListener('click', () => load_mailbox('archive'));
+        document.querySelector('#compose').addEventListener('click', compose_email);
+        document.querySelector("#compose-form").addEventListener("submit", send_email);
+        // By default, load the inbox
+        load_mailbox("inbox");
+        });
+
+        function compose_email() {
+        // Show compose view and hide other views
+        document.querySelector('#emails-view').style.display = 'none';
+        document.querySelector('#compose-view').style.display = 'block';
+
+        // Clear out composition fields
+        document.querySelector('#compose-recipients').value = '';
+        document.querySelector('#compose-subject').value = '';
+        document.querySelector('#compose-body').value = '';
+        }
+
+        function load_mailbox(mailbox) {
+            
+            // Show the mailbox and hide other views
+            document.querySelector('#emails-view').style.display = 'block';
+            document.querySelector('#compose-view').style.display = 'none';
+
+            // Show the mailbox name
+            document.querySelector('#emails-view').innerHTML = `<h3>${mailbox.charAt(0).toUpperCase() + mailbox.slice(1)}</h3>`;
+            fetch(`/emails/${mailbox}`)
+            .then(response => response.json())
+            .then(emails => {emails.forEach(email => {
+                const element = document.createElement('div');
+                element.addEventListener('click', function () {
+                    view_email(event,mailbox)});
+                //console.log(email["read"]);
+                element.dataset.id=`${email["id"]}`
+                element.style.border = "1px solid black";
+                element.style.margin="10px"
+                element.style.borderRadius = "5px";
+                element.style.height="30px";
+                element.style.paddingLeft="5px";
+                if(email["read"]) {
+                    element.style.backgroundColor="gray";
+                }
+                else {
+                    element.style.backgroundColor="white";
+                }
+                if (mailbox === 'sent' && !email["archive"]){
+                    recipients = email['recipients'].join(" ");
+                    element.innerHTML=`<strong>${recipients}</strong> ${email["subject"]} <span>${email["timestamp"]}</span>`;
+                    document.querySelector('#emails-view').append(element);
+                }
+                else if(mailbox === 'inbox' && !email["archive"]) {
+                    element.innerHTML=`<strong>${email["sender"]}</strong> ${email["subject"]} ${email["timestamp"]}`;
+                    document.querySelector('#emails-view').append(element);
+                }
+                else {
+                    element.innerHTML=`<strong>${email["sender"]}</strong> ${email["subject"]} ${email["timestamp"]}`;
+                    document.querySelector('#emails-view').append(element);
+                }
+            });
+            });
+                    
+        }
+        function send_email(event) {
+            event.preventDefault();
+            const recipients = document.querySelector("#compose-recipients").value.split(",");
+            const subject = document.querySelector("#compose-subject").value;
+            const body = document.querySelector("#compose-body").value;
+            //alert("toerror");
+            if (recipients[0] ==="") {
+                compose_email();
+                alert("You must Enter at Least on resipient or more splited by(,)");
+                return;
+            }
+            if (subject === "") {
+                compose_email();
+                alert("You must Enter a subject");
+                return;
+            }
+            recipients.forEach((recipient) => {
+                fetch("/emails", {
+                    method: "POST",
+                    body: JSON.stringify({
+                    recipients: recipient,
+                    subject: subject,
+                    body: body,
+                    }),
+                })
+                // Take the return data and parse it in JSON format.
+                .then((response) => response.json())
+                .then((response) => {
+                    if (response === undefined){
+                        alert(`${recipient} doesn't exist!!`);
+                        compose_email();
+                        return;
+                    }
+                })
+                .catch((error) => {
+                    
+                });
+            })
+            load_mailbox("sent");
+            return false;
+                
+        }
+        function view_email(event, mailbox){
+            const element = event.target;
+            const id = element.dataset.id;
+            console.log(`${id}`);
+            fetch(`/emails/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        read: true
+                    })
+            })
+            fetch(`/emails/${id}`)
+            .then(response => response.json())
+            .then(email => {
+                //console.log(`From: ${email.sender}`);
+                const from = document.createElement('div');
+                from.innerHTML=`<strong>From:</strong> ${email.sender}`;
+                const to = document.createElement('div');
+                to.innerHTML=`<strong>To:</strong> ${email.recipients}`;
+                const subject = document.createElement('div');
+                subject.innerHTML=`<strong>Subject:</strong> ${email.subject}`;
+                const body = document.createElement('div');
+                body.innerHTML=`<strong>Body:</strong> ${email.body}`;
+                const time = document.createElement('div');
+                time.innerHTML=`<strong>Timestamp:</strong> ${email.timestamp}`;
+                const hr = document.createElement('hr');
+                const reply = document.createElement('button');
+                reply.innerHTML ="Reply";
+                reply.dataset.id = id;
+                reply.className = "btn btn-sm btn-outline-primary";
+                const archive = document.createElement('button');
+                archive.innerHTML ="Archive";
+                archive.dataset.id = id;
+                archive.className = "btn btn-sm btn-outline-primary";
+                archive.style.margin = "10px";
+                const unarchive = document.createElement('button');
+                unarchive.innerHTML ="Un archive";
+                unarchive.dataset.id = id;
+                unarchive.className = "btn btn-sm btn-outline-primary";
+                unarchive.style.margin = "10px";
+                archive.onclick = archive_email;
+                reply.onclick = reply_email;
+                unarchive.onclick = unarchive_email;
+                document.querySelector('#emails-view').innerHTML="";
+                document.querySelector('#emails-view').append(from);
+                document.querySelector('#emails-view').append(to);
+                document.querySelector('#emails-view').append(subject);
+                document.querySelector('#emails-view').append(time);
+                document.querySelector('#emails-view').append(reply);
+                if (mailbox === "inbox"){
+                    document.querySelector('#emails-view').append(archive);
+                }
+                else if (mailbox === "archive") {
+                    document.querySelector('#emails-view').append(unarchive);
+                }
+                document.querySelector('#emails-view').append(hr);
+                document.querySelector('#emails-view').append(body);
+            });
+        }
+        function archive_email(event) {
+            const btn = event.target;
+            const id = btn.dataset.id;
+            fetch(`/emails/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                archived: true
+            })
+            })
+            load_mailbox("inbox");
+        }
+        function unarchive_email() {
+            const btn = event.target;
+            const id = btn.dataset.id;
+            fetch(`/emails/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                archived: false
+            })
+            })
+            load_mailbox("inbox");
+        }
+        function reply_email() {
+            const btn = event.target;
+            const id = btn.dataset.id;
+            document.querySelector('#emails-view').style.display = 'none';
+            document.querySelector('#compose-view').style.display = 'block';
+            //getting the email
+            fetch(`/emails/${id}`)
+            .then(response => response.json())
+            .then(email => {
+                document.querySelector('#compose-recipients').value = `${email.sender}`;
+                if (email.subject.slice(0,3) === "RE:"){
+                    document.querySelector('#compose-subject').value = `${email.subject}`;
+                } else {
+                    document.querySelector('#compose-subject').value = `RE: ${email.subject}`;
+                }
+                document.querySelector('#compose-body').value = `On ${email.timestamp} ${email.sender} wrot: ${email.body}`;
+            });
+            // Clear out composition fields
+            document.querySelector('#compose-recipients').value = '';
+            document.querySelector('#compose-subject').value = '';
+            document.querySelector('#compose-body').value = '';
+        }
+    </script>
+{% endblock %}
